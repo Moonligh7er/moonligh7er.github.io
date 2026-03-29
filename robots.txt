@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://moonligh7er.github.io/developer-site/sitemap.xml
