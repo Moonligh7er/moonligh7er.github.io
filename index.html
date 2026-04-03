@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Moonlit Social Labs — Software Architecture &amp; Development</title>
+  <meta name="description" content="Moonlit Social Labs — software architecture, full-stack development, and free developer tools by Michael Wylde.">
+  <meta name="theme-color" content="#07070d">
+  <link rel="icon" type="image/svg+xml" href="https://moonligh7er.github.io/developer-site/moonlit-logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400;500&family=Space+Grotesk:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --void: #07070d;
+      --surface: #0f0f1a;
+      --border: #1a1a30;
+      --text-primary: #c8c8d4;
+      --text-secondary: #7a7a90;
+      --text-dim: #4a4a60;
+      --text-bright: #e8e8f0;
+      --teal: #00d4aa;
+      --violet: #8b5cf6;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas', monospace;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-display: 'Space Grotesk', var(--font-sans);
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: #030818;
+      color: var(--text-primary);
+      overflow: hidden;
+      cursor: default;
+    }
+
+    canvas { display: block; position: fixed; inset: 0; }
+    #scene { display: none; }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+      pointer-events: none;
+    }
+
+    .wrapper {
+      max-width: 540px;
+      pointer-events: auto;
+      background: rgba(3, 8, 24, 0.55);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(0, 212, 170, 0.08);
+      padding: 3rem 2.5rem;
+    }
+
+    .logo {
+      width: 44px;
+      height: 44px;
+      margin: 0 auto 1.5rem;
+      opacity: 0.85;
+      display: block;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--teal), var(--violet));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.4rem;
+    }
+
+    .tagline {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 1.5rem;
+    }
+
+    p {
+      font-size: 0.95rem;
+      line-height: 1.7;
+      margin-bottom: 2rem;
+      color: var(--text-secondary);
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      justify-content: center;
+    }
+
+    .links a {
+      display: inline-block;
+      padding: 0.6rem 1.3rem;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      transition: border-color 0.3s, color 0.3s, box-shadow 0.3s, transform 0.2s;
+    }
+
+    .links a:hover {
+      border-color: var(--teal);
+      color: var(--text-bright);
+      box-shadow: 0 0 20px rgba(0, 212, 170, 0.1);
+      transform: translateY(-2px);
+    }
+
+    .links a.primary {
+      background: linear-gradient(135deg, var(--teal), var(--violet));
+      color: var(--void);
+      border-color: transparent;
+      font-weight: 500;
+    }
+
+    .links a.primary:hover {
+      box-shadow: 0 0 24px rgba(0, 212, 170, 0.3), 0 0 48px rgba(139, 92, 246, 0.15);
+    }
+
+    @media (max-width: 520px) {
+      .wrapper { padding: 2rem 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <canvas id="output"></canvas>
+
+  <div class="overlay">
+    <div class="wrapper">
+      <img src="https://moonligh7er.github.io/developer-site/moonlit-logo.svg" alt="Moonlit Social Labs" class="logo">
+      <h1>Moonlit Social Labs</h1>
+      <p class="tagline">architecture for the signal-seekers</p>
+      <p>Software architecture, full-stack development, and free browser-based tools. Everything client-side. No tracking. No signup.</p>
+      <div class="links">
+        <a href="https://moonligh7er.github.io/developer-site/" class="primary">Portfolio</a>
+        <a href="https://moonligh7er.github.io/developer-site/free-tools.html">Free Tools</a>
+        <a href="https://moonligh7er.github.io/developer-site/lab.html">Lab</a>
+        <a href="https://moonligh7er.github.io/developer-site/connect.html">Connect</a>
+      </div>
+    </div>
+  </div>
+
+<script>
+const sceneCanvas = document.getElementById('scene');
+const outCanvas = document.getElementById('output');
+const sctx = sceneCanvas.getContext('2d');
+const ctx = outCanvas.getContext('2d');
+
+let W, H, t = 0;
+const CELL = 7;
+let cols, rows;
+
+function resize() {
+  W = sceneCanvas.width = outCanvas.width = window.innerWidth;
+  H = sceneCanvas.height = outCanvas.height = window.innerHeight;
+  cols = Math.ceil(W / CELL);
+  rows = Math.ceil(H / CELL);
+  regenerateChars();
+}
+
+const codeChars = '01{}[]<>():;=+-*/|!~アイウエオカキクケコサシスセソ∞∅∆∇⊕◇◆'.split('');
+const waterChars = '~≈∿-=.:;_|/\\'.split('');
+
+let charGrid = [];
+let charTimer = 0;
+function regenerateChars() {
+  charGrid = [];
+  for (let r = 0; r < rows; r++) {
+    const row = [];
+    for (let c = 0; c < cols; c++) {
+      row.push(Math.random() > 0.4
+        ? codeChars[Math.floor(Math.random() * codeChars.length)]
+        : waterChars[Math.floor(Math.random() * waterChars.length)]
+      );
+    }
+    charGrid.push(row);
+  }
+}
+
+class Jellyfish {
+  constructor(x, y, size, isTeal) {
+    this.x = x; this.y = y; this.size = size; this.isTeal = isTeal;
+    this.speed = 0.0003 + Math.random() * 0.0004;
+    this.driftX = (Math.random() - 0.5) * 0.00003;
+    this.pulseFreq = 0.12 + Math.random() * 0.08;
+    this.pulseOffset = Math.random() * Math.PI * 2;
+    this.wobblePhase = Math.random() * Math.PI * 2;
+    this.tentacleCount = 7 + Math.floor(Math.random() * 5);
+    this.tentacleSeeds = [];
+    for (let i = 0; i < this.tentacleCount; i++) {
+      this.tentacleSeeds.push({
+        lengthMul: 0.6 + Math.random() * 0.8,
+        waveMul: 0.8 + Math.random() * 0.6,
+        offset: Math.random() * Math.PI * 2,
+        thickness: 1 + Math.random() * 2,
+      });
+    }
+    this.bubbles = [];
+    this.bubbleTimer = Math.random() * 100;
+  }
+
+  update(dt) {
+    const pulse = Math.sin(t * this.pulseFreq + this.pulseOffset);
+    const boost = pulse > 0.4 ? 0.00002 : 0;
+    this.y -= this.speed + boost;
+    this.wobblePhase += 0.002;
+    this.x += this.driftX + Math.sin(this.wobblePhase) * 0.00002;
+    if (this.y < -0.15) { this.y = 1.15 + Math.random() * 0.1; this.x = 0.1 + Math.random() * 0.8; }
+    this.bubbleTimer += dt;
+    if (this.bubbleTimer > 30 + Math.random() * 60) {
+      this.bubbleTimer = 0;
+      const bx = this.x * W + (Math.random() - 0.5) * this.size * 1.2;
+      const by = this.y * H - this.size * 0.2;
+      this.bubbles.push({ x: bx, y: by, vy: -0.3 - Math.random() * 0.5, r: 3 + Math.random() * 6, life: 0 });
+    }
+    for (let i = this.bubbles.length - 1; i >= 0; i--) {
+      const b = this.bubbles[i];
+      b.y += b.vy; b.x += Math.sin(t * 0.5 + i) * 0.08; b.life++;
+      if (b.life > 500 || b.y < -20) this.bubbles.splice(i, 1);
+    }
+  }
+
+  drawToScene(sctx) {
+    const cx = this.x * W, cy = this.y * H;
+    const pulse = Math.sin(t * this.pulseFreq + this.pulseOffset);
+    const bellW = this.size * (0.9 + pulse * 0.1);
+    const bellH = this.size * (0.65 + pulse * -0.08);
+    const hue = this.isTeal ? 180 : 300;
+    const sat = this.isTeal ? 80 : 70;
+    let dissolve = 1;
+    if (this.y < 0.20) { dissolve = Math.max(0, this.y / 0.20); dissolve *= dissolve; }
+    if (dissolve <= 0) return;
+    sctx.save();
+    sctx.globalAlpha = dissolve;
+    const glow = sctx.createRadialGradient(cx, cy - bellH * 0.2, 0, cx, cy, this.size * 3);
+    glow.addColorStop(0, `hsla(${hue}, ${sat}%, 65%, 0.6)`);
+    glow.addColorStop(0.3, `hsla(${hue}, ${sat}%, 50%, 0.3)`);
+    glow.addColorStop(0.6, `hsla(${hue}, ${sat}%, 35%, 0.1)`);
+    glow.addColorStop(1, 'transparent');
+    sctx.fillStyle = glow;
+    sctx.fillRect(cx - this.size * 3, cy - this.size * 3, this.size * 6, this.size * 6);
+    sctx.beginPath();
+    sctx.moveTo(cx - bellW, cy + 2);
+    sctx.quadraticCurveTo(cx - bellW, cy - bellH * 1.4, cx, cy - bellH * 1.5);
+    sctx.quadraticCurveTo(cx + bellW, cy - bellH * 1.4, cx + bellW, cy + 2);
+    for (let i = 0; i < 8; i++) {
+      const progress = i / 8;
+      const sx = cx + bellW - progress * bellW * 2;
+      const scy2 = cy + 2 + Math.sin(progress * Math.PI * 8 + t * 0.3) * 3;
+      sctx.lineTo(sx, scy2);
+    }
+    sctx.closePath();
+    const bellGrad = sctx.createRadialGradient(cx, cy - bellH * 0.5, 0, cx, cy, bellW);
+    bellGrad.addColorStop(0, `hsl(${hue}, ${sat}%, 75%)`);
+    bellGrad.addColorStop(0.4, `hsl(${hue}, ${sat}%, 60%)`);
+    bellGrad.addColorStop(0.8, `hsl(${hue}, ${sat - 10}%, 45%)`);
+    bellGrad.addColorStop(1, `hsla(${hue}, ${sat - 15}%, 35%, 0.7)`);
+    sctx.fillStyle = bellGrad;
+    sctx.fill();
+    sctx.beginPath();
+    sctx.ellipse(cx, cy - bellH * 0.4, bellW * 0.45, bellH * 0.55, 0, 0, Math.PI * 2);
+    sctx.fillStyle = `hsla(${hue}, ${sat + 10}%, 85%, 0.5)`;
+    sctx.fill();
+    for (let ti = 0; ti < this.tentacleCount; ti++) {
+      const seed = this.tentacleSeeds[ti];
+      const startX = cx - bellW * 0.7 + (ti / (this.tentacleCount - 1)) * bellW * 1.4;
+      const tentLen = this.size * 2.0 * seed.lengthMul;
+      sctx.beginPath();
+      sctx.moveTo(startX, cy + 4);
+      const segments = 16;
+      for (let s = 1; s <= segments; s++) {
+        const progress = s / segments;
+        const wave1 = Math.sin(t * 0.25 * seed.waveMul + ti * 0.7 + progress * 3 + seed.offset) * (10 + progress * 18);
+        const wave2 = Math.sin(t * 0.6 + ti * 1.3 + progress * 6 + seed.offset) * (3 + progress * 8);
+        const wave3 = Math.sin(t * 0.08 + ti * 0.4 + progress * 1.5) * (4 + progress * 6);
+        const wave = wave1 + wave2 + wave3;
+        const tx = startX + wave + (ti - this.tentacleCount / 2) * progress * 2.5;
+        const ty = cy + 4 + progress * tentLen;
+        sctx.lineTo(tx, ty);
+      }
+      const tentAlpha = 0.55 + Math.sin(t * 0.2 + ti) * 0.1;
+      sctx.strokeStyle = `hsla(${hue}, ${sat}%, 55%, ${tentAlpha})`;
+      sctx.lineWidth = seed.thickness + 0.5;
+      sctx.stroke();
+    }
+    for (let oa = 0; oa < 3; oa++) {
+      const oaX = cx + (oa - 1) * bellW * 0.3;
+      const oaLen = this.size * 2.5;
+      sctx.beginPath();
+      sctx.moveTo(oaX, cy + 3);
+      const segs = 18;
+      for (let s = 1; s <= segs; s++) {
+        const p = s / segs;
+        const wave = Math.sin(t * 0.18 + oa * 1.2 + p * 4) * (6 + p * 22)
+                   + Math.sin(t * 0.4 + oa * 0.8 + p * 7) * (2 + p * 10);
+        sctx.lineTo(oaX + wave, cy + 3 + p * oaLen);
+      }
+      sctx.strokeStyle = `hsla(${hue + 15}, ${sat}%, 60%, 0.55)`;
+      sctx.lineWidth = 2.5 + (1 - oa / 3) * 2;
+      sctx.stroke();
+    }
+    for (const b of this.bubbles) {
+      const bAlpha = Math.max(0, 0.7 - b.life * 0.001);
+      const bg = sctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * 2.5);
+      bg.addColorStop(0, `hsla(${hue}, 60%, 70%, ${bAlpha * 0.4})`);
+      bg.addColorStop(1, 'transparent');
+      sctx.fillStyle = bg;
+      sctx.fillRect(b.x - b.r * 3, b.y - b.r * 3, b.r * 6, b.r * 6);
+      sctx.beginPath();
+      sctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      sctx.fillStyle = `hsla(${hue}, 55%, 70%, ${bAlpha * 0.5})`;
+      sctx.fill();
+      sctx.strokeStyle = `hsla(${hue}, 70%, 80%, ${bAlpha * 0.7})`;
+      sctx.lineWidth = 1;
+      sctx.stroke();
+      sctx.beginPath();
+      sctx.arc(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.3, 0, Math.PI * 2);
+      sctx.fillStyle = `hsla(${hue}, 40%, 90%, ${bAlpha * 0.6})`;
+      sctx.fill();
+    }
+    sctx.restore();
+  }
+}
+
+const jellyfish = [
+  new Jellyfish(0.18, 0.55, 65, true),
+  new Jellyfish(0.42, 0.72, 55, true),
+  new Jellyfish(0.55, 0.40, 70, false),
+  new Jellyfish(0.72, 0.62, 50, false),
+  new Jellyfish(0.32, 0.85, 60, true),
+  new Jellyfish(0.82, 0.48, 45, true),
+];
+
+function drawWaterSurface(sctx) {
+  sctx.save();
+  const surfaceH = H * 0.06;
+  const surfGrad = sctx.createLinearGradient(0, 0, 0, surfaceH);
+  surfGrad.addColorStop(0, 'rgba(60, 160, 240, 0.35)');
+  surfGrad.addColorStop(0.3, 'rgba(30, 100, 200, 0.20)');
+  surfGrad.addColorStop(0.7, 'rgba(15, 60, 140, 0.08)');
+  surfGrad.addColorStop(1, 'transparent');
+  sctx.fillStyle = surfGrad;
+  sctx.fillRect(0, 0, W, surfaceH);
+  for (let i = 0; i < 12; i++) {
+    const cx = (i / 12) * W + Math.sin(t * 0.05 + i * 1.3) * 40;
+    const cy = 3 + Math.sin(t * 0.3 + i * 0.8) * 2 + Math.sin(t * 0.08 + i * 0.6) * 3;
+    const cw = 30 + Math.sin(t * 0.06 + i) * 15;
+    const pf = Math.max(0, Math.sin(t * 0.8 + i * 1.9) * 0.4 + Math.sin(t * 1.5 + i * 3.2) * 0.2 + 0.5);
+    const cGrad = sctx.createRadialGradient(cx, cy, 0, cx, cy, cw);
+    cGrad.addColorStop(0, `rgba(100, 200, 255, ${0.30 * pf})`);
+    cGrad.addColorStop(0.5, `rgba(50, 140, 220, ${0.12 * pf})`);
+    cGrad.addColorStop(1, 'transparent');
+    sctx.fillStyle = cGrad;
+    sctx.fillRect(cx - cw, cy - cw, cw * 2, cw * 2);
+  }
+  sctx.globalCompositeOperation = 'lighter';
+  const shaftCount = 6;
+  for (let i = 0; i < shaftCount; i++) {
+    const baseX = W * (0.08 + (i / (shaftCount - 1)) * 0.84);
+    const swayX = Math.sin(t * 0.025 + i * 1.1) * 50 + Math.sin(t * 0.04 + i * 0.7) * 25;
+    const topX = baseX + swayX;
+    const topW = 8 + Math.sin(t * 0.035 + i * 0.9) * 4;
+    const botW = 50 + Math.sin(t * 0.02 + i * 1.4) * 25 + i * 8;
+    const botX = topX + Math.sin(t * 0.015 + i * 0.5) * 30;
+    const depth = H * (0.45 + Math.sin(t * 0.018 + i * 0.8) * 0.15);
+    const f1 = Math.sin(t * 0.7 + i * 2.3) * 0.3;
+    const f2 = Math.sin(t * 0.23 + i * 1.7) * 0.2;
+    const f3 = Math.sin(t * 0.05 + i * 0.9) * 0.15;
+    const f4 = Math.sin(t * 1.3 + i * 3.1) * 0.1;
+    const ft = Math.max(0, 0.5 + f1 + f2 + f3 + f4);
+    const shaftGrad = sctx.createLinearGradient(topX, 0, botX, depth);
+    const intensity = (0.14 + Math.sin(t * 0.03 + i * 1.2) * 0.04) * ft;
+    shaftGrad.addColorStop(0, `rgba(60, 160, 240, ${intensity + 0.08})`);
+    shaftGrad.addColorStop(0.1, `rgba(45, 130, 210, ${intensity})`);
+    shaftGrad.addColorStop(0.4, `rgba(25, 90, 180, ${intensity * 0.5})`);
+    shaftGrad.addColorStop(0.7, `rgba(15, 60, 140, ${intensity * 0.2})`);
+    shaftGrad.addColorStop(1, 'transparent');
+    sctx.fillStyle = shaftGrad;
+    sctx.beginPath();
+    sctx.moveTo(topX - topW, 0); sctx.lineTo(topX + topW, 0);
+    sctx.lineTo(botX + botW, depth); sctx.lineTo(botX - botW, depth);
+    sctx.fill();
+    const coreGrad = sctx.createLinearGradient(topX, 0, botX, depth * 0.6);
+    coreGrad.addColorStop(0, `rgba(100, 190, 255, ${intensity * 0.6})`);
+    coreGrad.addColorStop(0.3, `rgba(60, 140, 220, ${intensity * 0.2})`);
+    coreGrad.addColorStop(1, 'transparent');
+    sctx.fillStyle = coreGrad;
+    sctx.beginPath();
+    sctx.moveTo(topX - topW * 0.3, 0); sctx.lineTo(topX + topW * 0.3, 0);
+    sctx.lineTo(botX + botW * 0.3, depth * 0.6); sctx.lineTo(botX - botW * 0.3, depth * 0.6);
+    sctx.fill();
+  }
+  for (let i = 0; i < 20; i++) {
+    const cx = Math.sin(t * 0.02 + i * 2.1) * W * 0.4 + W * 0.5 + Math.cos(t * 0.03 + i) * 60;
+    const cy = H * 0.05 + Math.sin(t * 0.025 + i * 1.7) * H * 0.2 + i * H * 0.015;
+    const cr = 8 + Math.sin(t * 0.04 + i * 0.9) * 5;
+    const cAlpha = 0.04 + Math.sin(t * 0.05 + i * 1.3) * 0.02;
+    if (cAlpha > 0) {
+      const dGrad = sctx.createRadialGradient(cx, cy, 0, cx, cy, cr);
+      dGrad.addColorStop(0, `rgba(80, 180, 240, ${cAlpha})`);
+      dGrad.addColorStop(1, 'transparent');
+      sctx.fillStyle = dGrad;
+      sctx.fillRect(cx - cr, cy - cr, cr * 2, cr * 2);
+    }
+  }
+  sctx.restore();
+}
+
+function renderScene() {
+  const bg = sctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#051530'); bg.addColorStop(0.3, '#030c20');
+  bg.addColorStop(0.7, '#020816'); bg.addColorStop(1, '#01040c');
+  sctx.fillStyle = bg;
+  sctx.fillRect(0, 0, W, H);
+  drawWaterSurface(sctx);
+  const sorted = [...jellyfish].sort((a, b) => a.y - b.y);
+  for (const jf of sorted) { jf.update(1); jf.drawToScene(sctx); }
+}
+
+function renderAsCode() {
+  const imageData = sctx.getImageData(0, 0, W, H);
+  const pixels = imageData.data;
+  ctx.fillStyle = '#000000';
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  charTimer++;
+  if (charTimer > 30) {
+    charTimer = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (Math.random() < 0.05) {
+          charGrid[r][c] = Math.random() > 0.4
+            ? codeChars[Math.floor(Math.random() * codeChars.length)]
+            : waterChars[Math.floor(Math.random() * waterChars.length)];
+        }
+      }
+    }
+  }
+  for (let r = 0; r < rows; r++) {
+    if (r >= charGrid.length) break;
+    for (let c = 0; c < cols; c++) {
+      if (c >= charGrid[r].length) break;
+      const px = c * CELL + CELL / 2;
+      const py = r * CELL + CELL / 2;
+      const sx = Math.min(Math.floor(px), W - 1);
+      const sy = Math.min(Math.floor(py), H - 1);
+      const pidx = (sy * W + sx) * 4;
+      let pr = pixels[pidx], pg = pixels[pidx + 1], pb = pixels[pidx + 2];
+      const brightness = pr * 0.299 + pg * 0.587 + pb * 0.114;
+      if (brightness < 1) {
+        if (Math.random() < 0.12) {
+          ctx.font = `${CELL - 1}px monospace`;
+          ctx.fillStyle = 'rgba(8, 25, 50, 0.3)';
+          ctx.fillText(charGrid[r][c], px, py);
+        }
+        continue;
+      }
+      const drift = Math.sin(t * 0.3 + c * 0.5 + r * 0.2) * 0.5;
+      const boost = brightness < 20 ? 2.5 : (brightness < 60 ? 1.8 : 1.2);
+      pr = Math.min(255, Math.floor(pr * boost));
+      pg = Math.min(255, Math.floor(pg * boost));
+      pb = Math.min(255, Math.floor(pb * boost));
+      const alpha = Math.min(0.95, 0.2 + brightness / 50);
+      ctx.font = `${CELL - 1}px monospace`;
+      ctx.fillStyle = `rgba(${pr}, ${pg}, ${pb}, ${alpha})`;
+      ctx.fillText(charGrid[r][c], px, py + drift);
+    }
+  }
+}
+
+function draw() {
+  t += 0.016;
+  renderScene();
+  renderAsCode();
+  requestAnimationFrame(draw);
+}
+
+resize();
+window.addEventListener('resize', resize);
+draw();
+</script>
+</body>
+</html>
