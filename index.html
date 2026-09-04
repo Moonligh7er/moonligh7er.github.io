@@ -436,9 +436,73 @@ function renderScene() {
   for (const jf of sorted) { jf.update(1); jf.drawToScene(sctx); }
 }
 
+function sampleBrightness(px, py) {
+  // Firefox-safe replacement for sctx.getImageData(): reconstruct per-pixel
+  // brightness mathematically from jellyfish + water geometry. Same visual
+  // output as pixel-sampling the hidden scene canvas.
+  let r = 0, g = 0, b = 0;
+
+  // Water surface ambient (top ~6% of viewport)
+  const surfH = H * 0.06;
+  if (py < surfH) {
+    const surfFade = 1 - (py / surfH);
+    const w = surfFade * 0.35;
+    r += 60 * w;
+    g += 160 * w;
+    b += 240 * w;
+  }
+
+  for (const jf of jellyfish) {
+    const cx = jf.x * W;
+    const cy = jf.y * H;
+    const dx = px - cx;
+    const dy = py - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxDist = jf.size * 3;
+    if (dist > maxDist) continue;
+
+    // Match the dissolve fade near the water surface
+    let dissolve = 1;
+    if (jf.y < 0.20) { dissolve = Math.max(0, jf.y / 0.20); dissolve *= dissolve; }
+    if (dissolve <= 0) continue;
+
+    // Pulse animation (matches drawToScene's bell pulse)
+    const pulse = Math.sin(t * jf.pulseFreq + jf.pulseOffset);
+    const pulseScale = 1 + pulse * 0.15;
+
+    // Radial glow falloff mirroring the createRadialGradient stops:
+    //   alpha: 0.6 @ 0% -> 0.3 @ 30% -> 0.1 @ 60% -> 0 @ 100% of size*3
+    const norm = dist / maxDist;
+    let alpha;
+    if (norm < 0.3)      alpha = 0.6 - (norm / 0.3) * 0.3;
+    else if (norm < 0.6) alpha = 0.3 - ((norm - 0.3) / 0.3) * 0.2;
+    else                 alpha = 0.1 * (1 - (norm - 0.6) / 0.4);
+
+    // Bell core adds an opaque bright center within ~1x size
+    if (dist < jf.size) {
+      const bellNorm = dist / jf.size;
+      alpha += (1 - bellNorm * bellNorm) * 0.7;
+    }
+
+    alpha *= dissolve * pulseScale;
+    if (alpha <= 0) continue;
+
+    // Color: teal hsla(180,80%,65%) or violet hsla(300,70%,65%)
+    if (jf.isTeal) {
+      r += 60 * alpha;
+      g += 220 * alpha;
+      b += 208 * alpha;
+    } else {
+      r += 200 * alpha;
+      g += 105 * alpha;
+      b += 217 * alpha;
+    }
+  }
+
+  return { r: Math.min(255, r), g: Math.min(255, g), b: Math.min(255, b) };
+}
+
 function renderAsCode() {
-  const imageData = sctx.getImageData(0, 0, W, H);
-  const pixels = imageData.data;
   ctx.fillStyle = '#000000';
   ctx.clearRect(0, 0, W, H);
   ctx.fillRect(0, 0, W, H);
@@ -463,10 +527,8 @@ function renderAsCode() {
       if (c >= charGrid[r].length) break;
       const px = c * CELL + CELL / 2;
       const py = r * CELL + CELL / 2;
-      const sx = Math.min(Math.floor(px), W - 1);
-      const sy = Math.min(Math.floor(py), H - 1);
-      const pidx = (sy * W + sx) * 4;
-      let pr = pixels[pidx], pg = pixels[pidx + 1], pb = pixels[pidx + 2];
+      const sample = sampleBrightness(px, py);
+      let pr = sample.r, pg = sample.g, pb = sample.b;
       const brightness = pr * 0.299 + pg * 0.587 + pb * 0.114;
       if (brightness < 1) {
         if (Math.random() < 0.12) {
@@ -491,7 +553,10 @@ function renderAsCode() {
 
 function draw() {
   t += 0.016;
-  renderScene();
+  // Physics-only update; the scene canvas is no longer sampled, so we skip
+  // renderScene() and let sampleBrightness() reconstruct brightness from
+  // jellyfish positions directly.
+  for (const jf of jellyfish) jf.update(1);
   renderAsCode();
   requestAnimationFrame(draw);
 }
