@@ -436,22 +436,22 @@ function renderScene() {
   for (const jf of sorted) { jf.update(1); jf.drawToScene(sctx); }
 }
 
-function sampleBrightness(px, py) {
-  // Firefox-safe replacement for sctx.getImageData(): reconstruct per-pixel
-  // brightness mathematically from jellyfish + water geometry. Same visual
-  // output as pixel-sampling the hidden scene canvas.
-  let r = 0, g = 0, b = 0;
+// User-agent gate: Chrome/Chromium keeps the original simple radial path
+// (which the owner considers "perfect"); only Firefox runs the enhanced
+// shape-aware math. This avoids any regression risk on Chrome from the
+// enhanced version.
+const __IS_FIREFOX = typeof navigator !== 'undefined' &&
+  navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
 
-  // Water surface ambient (top ~6% of viewport)
+// Original Chrome-safe sampleBrightness (unchanged since 2026-09-03 fix).
+function sampleBrightnessSimple(px, py) {
+  let r = 0, g = 0, b = 0;
   const surfH = H * 0.06;
   if (py < surfH) {
     const surfFade = 1 - (py / surfH);
     const w = surfFade * 0.35;
-    r += 60 * w;
-    g += 160 * w;
-    b += 240 * w;
+    r += 60 * w; g += 160 * w; b += 240 * w;
   }
-
   for (const jf of jellyfish) {
     const cx = jf.x * W;
     const cy = jf.y * H;
@@ -460,47 +460,223 @@ function sampleBrightness(px, py) {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const maxDist = jf.size * 3;
     if (dist > maxDist) continue;
-
-    // Match the dissolve fade near the water surface
     let dissolve = 1;
     if (jf.y < 0.20) { dissolve = Math.max(0, jf.y / 0.20); dissolve *= dissolve; }
     if (dissolve <= 0) continue;
-
-    // Pulse animation (matches drawToScene's bell pulse)
     const pulse = Math.sin(t * jf.pulseFreq + jf.pulseOffset);
     const pulseScale = 1 + pulse * 0.15;
-
-    // Radial glow falloff mirroring the createRadialGradient stops:
-    //   alpha: 0.6 @ 0% -> 0.3 @ 30% -> 0.1 @ 60% -> 0 @ 100% of size*3
     const norm = dist / maxDist;
     let alpha;
     if (norm < 0.3)      alpha = 0.6 - (norm / 0.3) * 0.3;
     else if (norm < 0.6) alpha = 0.3 - ((norm - 0.3) / 0.3) * 0.2;
     else                 alpha = 0.1 * (1 - (norm - 0.6) / 0.4);
-
-    // Bell core adds an opaque bright center within ~1x size
     if (dist < jf.size) {
       const bellNorm = dist / jf.size;
       alpha += (1 - bellNorm * bellNorm) * 0.7;
     }
-
     alpha *= dissolve * pulseScale;
     if (alpha <= 0) continue;
-
-    // Color: teal hsla(180,80%,65%) or violet hsla(300,70%,65%)
     if (jf.isTeal) {
-      r += 60 * alpha;
-      g += 220 * alpha;
-      b += 208 * alpha;
+      r += 60 * alpha; g += 220 * alpha; b += 208 * alpha;
     } else {
-      r += 200 * alpha;
-      g += 105 * alpha;
-      b += 217 * alpha;
+      r += 200 * alpha; g += 105 * alpha; b += 217 * alpha;
+    }
+  }
+  return { r: Math.min(255, r), g: Math.min(255, g), b: Math.min(255, b) };
+}
+
+// Firefox-only enhanced path: reconstruct per-pixel brightness in a
+// shape-aware way that mirrors drawWaterSurface() + Jellyfish.drawToScene() —
+// jellyfish silhouettes (bell + tentacles + oral arms), light shafts
+// filtering down, surface caustics — instead of flat radial blobs.
+function sampleBrightnessRich(px, py) {
+  let r = 0, g = 0, b = 0;
+
+  const surfH = H * 0.06;
+
+  // -------- Water surface ambient band --------
+  if (py < surfH) {
+    const surfFade = 1 - (py / surfH);
+    const w = surfFade * 0.35;
+    r += 60 * w; g += 160 * w; b += 240 * w;
+  }
+
+  // -------- Surface caustic patches (12 pulsing hotspots) --------
+  for (let i = 0; i < 12; i++) {
+    const ccx = (i / 12) * W + Math.sin(t * 0.05 + i * 1.3) * 40;
+    const ccy = 3 + Math.sin(t * 0.3 + i * 0.8) * 2 + Math.sin(t * 0.08 + i * 0.6) * 3;
+    const cw = 30 + Math.sin(t * 0.06 + i) * 15;
+    const dxC = px - ccx, dyC = py - ccy;
+    const distC = Math.sqrt(dxC * dxC + dyC * dyC);
+    if (distC > cw) continue;
+    const pf = Math.max(0, Math.sin(t * 0.8 + i * 1.9) * 0.4 + Math.sin(t * 1.5 + i * 3.2) * 0.2 + 0.5);
+    const norm = distC / cw;
+    const alpha = (norm < 0.5 ? 0.30 - norm * 0.36 : 0.12 * (1 - (norm - 0.5) / 0.5)) * pf;
+    if (alpha <= 0) continue;
+    r += 100 * alpha; g += 200 * alpha; b += 255 * alpha;
+  }
+
+  // -------- Light shafts (6 filtering-down beams) --------
+  const shaftCount = 6;
+  for (let i = 0; i < shaftCount; i++) {
+    const baseX = W * (0.08 + (i / (shaftCount - 1)) * 0.84);
+    const swayX = Math.sin(t * 0.025 + i * 1.1) * 50 + Math.sin(t * 0.04 + i * 0.7) * 25;
+    const topX = baseX + swayX;
+    const topW = 8 + Math.sin(t * 0.035 + i * 0.9) * 4;
+    const botW = 50 + Math.sin(t * 0.02 + i * 1.4) * 25 + i * 8;
+    const botX = topX + Math.sin(t * 0.015 + i * 0.5) * 30;
+    const depth = H * (0.45 + Math.sin(t * 0.018 + i * 0.8) * 0.15);
+    if (py < 0 || py > depth) continue;
+
+    const tt = py / depth;                    // 0 at surface, 1 at shaft bottom
+    const centerX = topX + (botX - topX) * tt;
+    const halfW = topW + (botW - topW) * tt;
+    const dxS = Math.abs(px - centerX);
+    if (dxS > halfW) continue;
+
+    const f1 = Math.sin(t * 0.7 + i * 2.3) * 0.3;
+    const f2 = Math.sin(t * 0.23 + i * 1.7) * 0.2;
+    const f3 = Math.sin(t * 0.05 + i * 0.9) * 0.15;
+    const f4 = Math.sin(t * 1.3 + i * 3.1) * 0.1;
+    const ft = Math.max(0, 0.5 + f1 + f2 + f3 + f4);
+    const intensity = (0.14 + Math.sin(t * 0.03 + i * 1.2) * 0.04) * ft;
+
+    // Depth-fade mirroring the linear gradient stops
+    let depthFade;
+    if (tt < 0.1)      depthFade = intensity + 0.08 - (tt / 0.1) * 0.08;
+    else if (tt < 0.4) depthFade = intensity * (1 - (tt - 0.1) / 0.3 * 0.5);
+    else if (tt < 0.7) depthFade = intensity * (0.5 - (tt - 0.4) / 0.3 * 0.3);
+    else               depthFade = intensity * 0.2 * (1 - (tt - 0.7) / 0.3);
+
+    // Center-of-shaft is brighter (matches the inner core gradient)
+    const centerBoost = 1 - dxS / halfW;
+    depthFade *= 0.55 + centerBoost * 0.45;
+
+    r += 60 * depthFade * 2.0;   // scale up so shafts read at ASCII resolution
+    g += 160 * depthFade * 2.0;
+    b += 240 * depthFade * 2.0;
+  }
+
+  // -------- Jellyfish (bell silhouette + highlight + tentacles + oral arms + glow) --------
+  for (const jf of jellyfish) {
+    const cx = jf.x * W;
+    const cy = jf.y * H;
+    const pulse = Math.sin(t * jf.pulseFreq + jf.pulseOffset);
+    const bellW = jf.size * (0.9 + pulse * 0.1);
+    const bellH = jf.size * (0.65 + pulse * -0.08);
+
+    let dissolve = 1;
+    if (jf.y < 0.20) { dissolve = Math.max(0, jf.y / 0.20); dissolve *= dissolve; }
+    if (dissolve <= 0) continue;
+
+    // Broad-phase reject: any pixel outside the max footprint (bell glow + tentacles)
+    const dxRaw = px - cx;
+    const dyRaw = py - cy;
+    const maxRadius = jf.size * 3;
+    const maxBelow = jf.size * 2.7 + 6;
+    if (dxRaw < -maxRadius || dxRaw > maxRadius) continue;
+    if (dyRaw < -maxRadius || dyRaw > maxBelow) continue;
+
+    // Color base: teal hsl(180,80%,~65%) or violet hsl(300,70%,~65%)
+    const isTeal = jf.isTeal;
+    const jr = isTeal ? 60 : 200;
+    const jg = isTeal ? 220 : 105;
+    const jb = isTeal ? 208 : 217;
+
+    // ---- Radial glow around the bell ----
+    const distGlow = Math.sqrt(dxRaw * dxRaw + dyRaw * dyRaw);
+    if (distGlow < maxRadius) {
+      const gNorm = distGlow / maxRadius;
+      let gAlpha;
+      if (gNorm < 0.3)      gAlpha = 0.6 - (gNorm / 0.3) * 0.3;
+      else if (gNorm < 0.6) gAlpha = 0.3 - ((gNorm - 0.3) / 0.3) * 0.2;
+      else                  gAlpha = 0.1 * (1 - (gNorm - 0.6) / 0.4);
+      gAlpha *= dissolve * 0.55;
+      r += jr * gAlpha; g += jg * gAlpha; b += jb * gAlpha;
+    }
+
+    // ---- Bell body (elliptical, top-heavy dome) ----
+    // Bell center is offset slightly above jellyfish center to match the
+    // quadratic-curve dome in drawToScene (moveTo cy+2, control cy - bellH*1.4).
+    const bellCy = cy - bellH * 0.55;
+    const nx = dxRaw / bellW;
+    const ny = (py - bellCy) / (bellH * 1.5);
+    const bellDist = nx * nx + ny * ny;
+    if (bellDist < 1.4 && py < cy + 4) {
+      let a;
+      if (bellDist < 0.16) a = 0.9 * (1 - bellDist / 0.16 * 0.35);
+      else                 a = 0.55 * (1 - (bellDist - 0.16) / 1.24);
+      a *= dissolve * 1.15;                    // hsl 60-75% lightness -> read bright
+      r += jr * a; g += jg * a; b += jb * a;
+    }
+
+    // ---- Bright highlight ellipse near top of bell ----
+    const hx = dxRaw;
+    const hy = py - (cy - bellH * 0.4);
+    const hnx = hx / (bellW * 0.45);
+    const hny = hy / (bellH * 0.55);
+    const highlightD = hnx * hnx + hny * hny;
+    if (highlightD < 1) {
+      const a = (1 - highlightD) * 0.5 * dissolve;
+      // hsla(hue+10, sat+10%, 85%, 0.5) -> lighter shift
+      r += (isTeal ?  90 : 225) * a;
+      g += (isTeal ? 235 : 145) * a;
+      b += (isTeal ? 225 : 235) * a;
+    }
+
+    // ---- Tentacles (n wavy strands from just below bell) ----
+    if (py > cy - 2 && py < cy + 4 + jf.size * 2.4) {
+      const tentacleCount = jf.tentacleCount;
+      const tentDist = py - (cy + 4);
+      const tentLen = jf.size * 2.0;
+      for (let ti = 0; ti < tentacleCount; ti++) {
+        const seed = jf.tentacleSeeds[ti];
+        const progress = tentDist / (tentLen * seed.lengthMul);
+        if (progress < 0 || progress > 1) continue;
+        const startX = cx - bellW * 0.7 + (ti / (tentacleCount - 1)) * bellW * 1.4;
+        const wave1 = Math.sin(t * 0.25 * seed.waveMul + ti * 0.7 + progress * 3 + seed.offset) * (10 + progress * 18);
+        const wave2 = Math.sin(t * 0.6 + ti * 1.3 + progress * 6 + seed.offset) * (3 + progress * 8);
+        const wave3 = Math.sin(t * 0.08 + ti * 0.4 + progress * 1.5) * (4 + progress * 6);
+        const tx = startX + wave1 + wave2 + wave3 + (ti - tentacleCount / 2) * progress * 2.5;
+        const dxT = Math.abs(px - tx);
+        const strokeR = (seed.thickness + 0.5) * 1.8;
+        if (dxT < strokeR) {
+          const a = (1 - dxT / strokeR) * 0.55 * dissolve;
+          r += jr * a * 0.85; g += jg * a * 0.85; b += jb * a * 0.85;
+        }
+      }
+    }
+
+    // ---- Oral arms (3 thicker strands hanging near center) ----
+    if (py > cy - 2 && py < cy + 4 + jf.size * 2.7) {
+      const oaDist = py - (cy + 3);
+      const oaLen = jf.size * 2.5;
+      const op = oaDist / oaLen;
+      if (op >= 0 && op <= 1) {
+        for (let oa = 0; oa < 3; oa++) {
+          const oaBaseX = cx + (oa - 1) * bellW * 0.3;
+          const wave = Math.sin(t * 0.18 + oa * 1.2 + op * 4) * (6 + op * 22)
+                     + Math.sin(t * 0.4 + oa * 0.8 + op * 7) * (2 + op * 10);
+          const armX = oaBaseX + wave;
+          const armR = (2.5 + (1 - oa / 3) * 2) * 1.8;
+          const dxA = Math.abs(px - armX);
+          if (dxA < armR) {
+            const a = (1 - dxA / armR) * 0.55 * dissolve;
+            // hue+15 offset
+            r += (isTeal ?  60 : 210) * a * 0.75;
+            g += (isTeal ? 235 : 125) * a * 0.75;
+            b += (isTeal ? 220 : 230) * a * 0.75;
+          }
+        }
+      }
     }
   }
 
   return { r: Math.min(255, r), g: Math.min(255, g), b: Math.min(255, b) };
 }
+
+// Dispatch: Chrome keeps the simple radial path, Firefox uses the rich one.
+const sampleBrightness = __IS_FIREFOX ? sampleBrightnessRich : sampleBrightnessSimple;
 
 function renderAsCode() {
   ctx.fillStyle = '#000000';
