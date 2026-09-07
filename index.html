@@ -436,59 +436,44 @@ function renderScene() {
   for (const jf of sorted) { jf.update(1); jf.drawToScene(sctx); }
 }
 
-// User-agent gate: Chrome/Chromium keeps the original simple radial path
-// (which the owner considers "perfect"); only Firefox runs the enhanced
-// shape-aware math. This avoids any regression risk on Chrome from the
-// enhanced version.
-const __IS_FIREFOX = typeof navigator !== 'undefined' &&
-  navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+// Rendering strategy:
+//
+//   Chrome (and normal Firefox): render the scene into the hidden canvas
+//   every frame, then bulk-read the pixel data with getImageData once per
+//   frame. Per-cell sampling then just indexes into that ImageData. This is
+//   the pre-2026-09-03 path — highest visual fidelity, actual jellyfish
+//   shapes and light shafts because we're reading real painted pixels.
+//
+//   Firefox with privacy.resistFingerprinting = true: getImageData returns
+//   all zeros to prevent canvas fingerprinting. Detected on frame 1 by
+//   sampling a pixel where we know a jellyfish should be; if it's black,
+//   we permanently fall back to the mathematical sampleBrightnessRich()
+//   for the rest of the session.
+//
+// Consequences:
+//   - Chrome path is byte-for-byte the original (pre-2026-09-03 fix).
+//   - Firefox users on default settings get the same rich path Chrome does.
+//   - Only fingerprint-resistant Firefox falls to the math approximation.
 
-// Original Chrome-safe sampleBrightness (unchanged since 2026-09-03 fix).
-function sampleBrightnessSimple(px, py) {
-  let r = 0, g = 0, b = 0;
-  const surfH = H * 0.06;
-  if (py < surfH) {
-    const surfFade = 1 - (py / surfH);
-    const w = surfFade * 0.35;
-    r += 60 * w; g += 160 * w; b += 240 * w;
-  }
-  for (const jf of jellyfish) {
-    const cx = jf.x * W;
-    const cy = jf.y * H;
-    const dx = px - cx;
-    const dy = py - cy;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const maxDist = jf.size * 3;
-    if (dist > maxDist) continue;
-    let dissolve = 1;
-    if (jf.y < 0.20) { dissolve = Math.max(0, jf.y / 0.20); dissolve *= dissolve; }
-    if (dissolve <= 0) continue;
-    const pulse = Math.sin(t * jf.pulseFreq + jf.pulseOffset);
-    const pulseScale = 1 + pulse * 0.15;
-    const norm = dist / maxDist;
-    let alpha;
-    if (norm < 0.3)      alpha = 0.6 - (norm / 0.3) * 0.3;
-    else if (norm < 0.6) alpha = 0.3 - ((norm - 0.3) / 0.3) * 0.2;
-    else                 alpha = 0.1 * (1 - (norm - 0.6) / 0.4);
-    if (dist < jf.size) {
-      const bellNorm = dist / jf.size;
-      alpha += (1 - bellNorm * bellNorm) * 0.7;
-    }
-    alpha *= dissolve * pulseScale;
-    if (alpha <= 0) continue;
-    if (jf.isTeal) {
-      r += 60 * alpha; g += 220 * alpha; b += 208 * alpha;
-    } else {
-      r += 200 * alpha; g += 105 * alpha; b += 217 * alpha;
-    }
-  }
-  return { r: Math.min(255, r), g: Math.min(255, g), b: Math.min(255, b) };
+let __sceneImageData = null;
+let __ffFallback = false;   // true once we detect the getImageData=zeros case
+let __ffChecked = false;    // guard so the detection only runs once
+
+function sampleBrightnessImageData(px, py) {
+  if (!__sceneImageData) return { r: 0, g: 0, b: 0 };
+  const iw = __sceneImageData.width;
+  const ix = (px | 0);
+  const iy = (py | 0);
+  const idx = (iy * iw + ix) * 4;
+  const d = __sceneImageData.data;
+  return { r: d[idx], g: d[idx + 1], b: d[idx + 2] };
 }
 
-// Firefox-only enhanced path: reconstruct per-pixel brightness in a
-// shape-aware way that mirrors drawWaterSurface() + Jellyfish.drawToScene() —
-// jellyfish silhouettes (bell + tentacles + oral arms), light shafts
-// filtering down, surface caustics — instead of flat radial blobs.
+// Mathematical fallback used only when getImageData returns zeros
+// (Firefox strict fingerprinting protection). Reconstructs per-pixel
+// brightness shape-by-shape from drawWaterSurface() + Jellyfish.drawToScene()
+// so it still produces recognizable jellyfish silhouettes, light shafts,
+// and caustics without any pixel read.
 function sampleBrightnessRich(px, py) {
   let r = 0, g = 0, b = 0;
 
@@ -675,8 +660,13 @@ function sampleBrightnessRich(px, py) {
   return { r: Math.min(255, r), g: Math.min(255, g), b: Math.min(255, b) };
 }
 
-// Dispatch: Chrome keeps the simple radial path, Firefox uses the rich one.
-const sampleBrightness = __IS_FIREFOX ? sampleBrightnessRich : sampleBrightnessSimple;
+// Dispatch: real pixel data unless we detected the FF-fingerprint-resist
+// zeros case, in which case the math fallback takes over for good.
+function sampleBrightness(px, py) {
+  return __ffFallback
+    ? sampleBrightnessRich(px, py)
+    : sampleBrightnessImageData(px, py);
+}
 
 function renderAsCode() {
   ctx.fillStyle = '#000000';
@@ -729,10 +719,40 @@ function renderAsCode() {
 
 function draw() {
   t += 0.016;
-  // Physics-only update; the scene canvas is no longer sampled, so we skip
-  // renderScene() and let sampleBrightness() reconstruct brightness from
-  // jellyfish positions directly.
   for (const jf of jellyfish) jf.update(1);
+
+  // Render the underlying scene into the hidden canvas and bulk-fetch pixel
+  // data for per-cell brightness sampling. This is the pre-2026-09-03 path
+  // — gives Chrome (and Firefox on default settings) the full rich scene
+  // with actual jellyfish shapes and light shafts.
+  if (!__ffFallback) {
+    renderScene();
+    try {
+      __sceneImageData = sctx.getImageData(0, 0, W, H);
+    } catch (e) {
+      __ffFallback = true;
+    }
+
+    // First-frame Firefox-fingerprint-resistance detection. If the pixels
+    // where jellyfish should be reading come back pitch black despite the
+    // scene being painted, Firefox is zeroing getImageData for privacy
+    // reasons. Fall back permanently to the math-based path in that case.
+    if (!__ffChecked && __sceneImageData) {
+      __ffChecked = true;
+      let anyBright = 0;
+      const d = __sceneImageData.data;
+      const w = __sceneImageData.width;
+      for (const jf of jellyfish) {
+        const jx = (jf.x * W) | 0;
+        const jy = (jf.y * H) | 0;
+        if (jx < 0 || jx >= w || jy < 0) continue;
+        const idx = (jy * w + jx) * 4;
+        anyBright += d[idx] + d[idx + 1] + d[idx + 2];
+      }
+      if (anyBright < 30) __ffFallback = true;
+    }
+  }
+
   renderAsCode();
   requestAnimationFrame(draw);
 }
